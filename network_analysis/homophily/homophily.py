@@ -44,7 +44,7 @@ def chance_homophily(chars):
 
 
 data_filepath = '../data/'
-df = pd.read_stata(data_filepath + "individual_characteristics.dta")
+df = pd.read_stata(data_filepath + "demographics/individual_characteristics.dta")
 
 # Store separate datasets for individuals belonging to Villages 1 and 2 as df1 and df2, respectively.
 df1 = df[df.village == 1]
@@ -55,8 +55,8 @@ print(df1.head())
 
 # n this dataset, each individual has a personal ID, or PID,
 # stored in key_vilno_1.csv and key_vilno_2.csv for villages 1 and 2, respectively.
-pid1 = pd.read_csv(data_filepath + "key_vilno_1.csv", dtype=int, header=None)
-pid2 = pd.read_csv(data_filepath + "key_vilno_2.csv", dtype=int, header=None)
+pid1 = pd.read_csv(data_filepath + "network_data/adjacency_matrix_keys/key_vilno_1.csv", dtype=int, header=None)
+pid2 = pd.read_csv(data_filepath + "network_data/adjacency_matrix_keys/key_vilno_2.csv", dtype=int, header=None)
 
 # Define Python dictionaries with personal IDs as keys
 # and sex, caste, and religion covariates, for Villages 1 and 2 as values
@@ -86,8 +86,8 @@ print("Village 2 chance of same sex:", chance_homophily(sex2))
 print("Village 2 chance of same caste:", chance_homophily(caste2))
 print("Village 2 chance of same religion:", chance_homophily(religion2))
 
-A1 = np.loadtxt(data_filepath + "adj_allVillageRelationships_vilno_1.csv", delimiter=",")
-A2 = np.loadtxt(data_filepath + "adj_allVillageRelationships_vilno_2.csv", delimiter=",")
+A1 = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_vilno_1.csv", delimiter=",")
+A2 = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_vilno_2.csv", delimiter=",")
 
 G1 = nx.to_networkx_graph(A1)
 G2 = nx.to_networkx_graph(A2)
