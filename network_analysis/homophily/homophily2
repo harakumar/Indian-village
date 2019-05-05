@@ -1,36 +1,44 @@
 from collections import Counter
-import pandas as pd
-import numpy as np
+
+import matplotlib.pyplot as plt
 # load networkx graph objects G1 and G2
 import networkx as nx
+import numpy as np
+import pandas as pd
 
 data_filepath = '../data/'
 
 
 def create_df():
-    fields = ['village', 'hhid', 'adjmatrix_key', 'religion', 'caste']
+    fields = ['hhid', 'religion', 'caste', 'resp_status']
     fields_hh = ['hhid', 'adjmatrix_key', 'village']
     df = pd.read_csv(data_filepath + "demographics/individual_characteristics.csv", usecols=fields)
-    df_caste = df.groupby(['hhid'])['caste'].agg(pd.Series.mode).to_frame()
-    df_caste['hhid'] = df_caste.index
-    df_caste.index.names = ['index']
-    df_religion = df.groupby(['hhid'])['religion'].agg(pd.Series.mode).to_frame()
-    df_religion['hhid'] = df_religion.index
-    df_religion.index.names = ['index']
+    df = df.loc[df['resp_status'] == 'Head of Household']
+    #df_caste = df.groupby(['hhid'])['caste'].agg(pd.Series.mode).to_frame()
+    #df_caste['hhid'] = df_caste.index
+    #df_caste.index.names = ['index']
+    #df_religion = df.groupby(['hhid'])['religion'].agg(pd.Series.mode).to_frame()
+    #df_religion['hhid'] = df_religion.index
+    #df_religion.index.names = ['index']
     df_hh = pd.read_csv(data_filepath + "demographics/household_characteristics.csv", usecols=fields_hh)
-    df_hh = pd.merge(df_hh, df_caste, on="hhid", how='outer')
-    df_hh = pd.merge(df_hh, df_religion, on="hhid", how='outer')
+    #df_hh = pd.merge(df_hh, df_caste, on="hhid", how='outer')
+    #df_hh = pd.merge(df_hh, df_religion, on="hhid", how='outer')
+    #df_step = [df, df_hh]
+    #df_final = reduce(lambda left, right: pd.merge(left, right, on='hhid'), df_step)
+    df_hh = pd.merge(df_hh, df, on="hhid",  how='outer')
+    df_hh = df_hh.drop_duplicates()
     dfs = list()
 
     for i in range(1, 78):
         try:
-            df_mf = pd.read_csv(data_filepath + "mf_participation/MF" + str(i) + ".csv", header=None,
-                                names=['mf_participation'])
+            df_mf = pd.read_csv(data_filepath + "mf_participation/MF" + str(i) + ".csv", header=None)
             df_hh_village = df_hh[df_hh.village == i]
+            if i == 4 or i == 9 or i == 12:
+                print("len df: " + str(len(df_hh_village.index)))
             df_hh_village = df_hh_village.assign(mf_participation=df_mf.values)
             dfs.append(df_hh_village)
-        except:
-            print("no village")
+        except Exception as e:
+            print("creating dfs: i: " + str(i) + " " + str(e))
 
     return dfs
 
@@ -43,7 +51,6 @@ def homophily(G, chars, IDs):
     find the homophily of the network.
     """
     num_same_ties, num_ties = 0, 0
-    print("hello2")
     try:
         for n1 in G.nodes():
             for n2 in G.nodes():
@@ -51,13 +58,10 @@ def homophily(G, chars, IDs):
                     if IDs[n1] in chars.keys() and IDs[n2] in chars.keys():
                         if G.has_edge(n1, n2):
                             num_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
-                            if any(chars[IDs[n1]]) == any(chars[IDs[n2]]):
+                            if chars[IDs[n1]] == chars[IDs[n2]]:
                                 num_same_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
     except Exception as e:
-        print("exception: " + str(e))
-    #print("hello")
-    #print("num_ties: " + str(num_ties))
-    #print("num_same_ties: " + str(num_same_ties))
+        print("exception: " + str(e) + " IDs[n1]: " + str(IDs[n1]) + " IDs[n2]" + str(IDs[n2]))
     return float(num_same_ties / num_ties)
 
 
@@ -85,18 +89,19 @@ def hh_chars():
 
 
 def map_features(dfs):
-    cast_maps = list()
-    religion_maps = list()
+    cast_maps = dict()
+    religion_maps = dict()
     for df in dfs:
         caste = dict()
         religion = dict()
+        village = df.village.iloc[0]
         for i, v in df.adjmatrix_key.items():
             if v not in caste:
                 caste[v] = df.caste[i]
             if v not in religion:
                 religion[v] = df.religion[i]
-        cast_maps.append(caste)
-        religion_maps.append(religion)
+        cast_maps[village] = caste
+        religion_maps[village] = religion
 
     return cast_maps, religion_maps
 
@@ -131,21 +136,42 @@ def find_homophilies():
     #pids = hh_pids()
     village_caste_homophily = dict()
     village_religion_homophily = dict()
-    for i in range(1, 78):
+    for df in dfs:
         try:
-            adj = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(i)+".csv",
+            village = df.village.iloc[0]
+            adj = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
                             delimiter=",")
             graph = nx.to_networkx_graph(adj)
-            array_pid = dfs[i-1].adjmatrix_key.values
-            print("i:" + str(i))
-            village_caste_homophily[i] = homophily(graph, cast_maps[i-1], array_pid)
-            village_religion_homophily[i] = homophily(graph, religion_maps[i-1], array_pid)
-        except:
-            pass
+            array_pid = df.adjmatrix_key.values
+            village_caste_homophily[village] = homophily(graph, cast_maps[village], array_pid)
+            village_religion_homophily[village] = homophily(graph, religion_maps[village], array_pid)
+        except Exception as e:
+            print("final exception: " + str(e))
     participation = find_mf_participation_percentage(dfs)
-    df1 = pd.DataFrame.from_dict([participation])
-    df2 = pd.DataFrame.from_dict([village_caste_homophily])
-    df3 = pd.DataFrame.from_dict([village_religion_homophily])
+    df1 = pd.Series(participation)
+    df2 = pd.Series(village_caste_homophily)
+    df3 = pd.Series(village_religion_homophily)
     return df1, df2, df3
 
+def correlation(df):
+    corr = df.corr()
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    cax = ax.matshow(corr, cmap='coolwarm', vmin=-1, vmax=1)
+    fig.colorbar(cax)
+    ticks = np.arange(0, len(df.columns), 1)
+    ax.set_xticks(ticks)
+    plt.xticks(rotation=90)
+    ax.set_yticks(ticks)
+    ax.set_xticklabels(df.columns)
+    ax.set_yticklabels(df.columns)
+    #plt.show()
+    plt.savefig('corr.png')
+
 df1, df2, df3 = find_homophilies()
+df = pd.DataFrame()
+df = df.assign(mf_participation=df1)
+df = df.assign(village_caste_homophily=df2)
+df = df.assign(village_religion_homophily=df3)
+
+correlation(df)
