@@ -6,21 +6,31 @@ import networkx as nx
 
 data_filepath = '../data/'
 
-def create_df():
-    df = pd.read_stata(data_filepath + "demographics/individual_characteristics.dta")
 
+def create_df():
+    fields = ['village', 'hhid', 'adjmatrix_key', 'religion', 'caste']
+    fields_hh = ['hhid', 'adjmatrix_key', 'village']
+    df = pd.read_csv(data_filepath + "demographics/individual_characteristics.csv", usecols=fields)
+    df_caste = df.groupby(['hhid'])['caste'].agg(pd.Series.mode).to_frame()
+    df_caste['hhid'] = df_caste.index
+    df_caste.index.names = ['index']
+    df_religion = df.groupby(['hhid'])['religion'].agg(pd.Series.mode).to_frame()
+    df_religion['hhid'] = df_religion.index
+    df_religion.index.names = ['index']
+    df_hh = pd.read_csv(data_filepath + "demographics/household_characteristics.csv", usecols=fields_hh)
+    df_hh = pd.merge(df_hh, df_caste, on="hhid", how='outer')
+    df_hh = pd.merge(df_hh, df_religion, on="hhid", how='outer')
     dfs = list()
 
     for i in range(1, 78):
-        df_village = df[df.village == i]
         try:
-            df_mf = pd.read_csv(data_filepath + "mf_participation/MF" + str(i) + ".csv", header=None, names=['mf_participation'])
-            df_village = pd.concat([df_village, df_mf], axis=1)
-            dfs.append(df_village)
+            df_mf = pd.read_csv(data_filepath + "mf_participation/MF" + str(i) + ".csv", header=None,
+                                names=['mf_participation'])
+            df_hh_village = df_hh[df_hh.village == i]
+            df_hh_village = df_hh_village.assign(mf_participation=df_mf.values)
+            dfs.append(df_hh_village)
         except:
-            pass
-
-
+            print("no village")
 
     return dfs
 
@@ -33,15 +43,22 @@ def homophily(G, chars, IDs):
     find the homophily of the network.
     """
     num_same_ties, num_ties = 0, 0
-    for n1 in G.nodes():
-        for n2 in G.nodes():
-            if n1 > n2:  # do not double-count edges!
-                if IDs[n1] in chars.keys() and IDs[n2] in chars.keys():
-                    if G.has_edge(n1, n2):
-                        num_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
-                        if chars[IDs[n1]] == chars[IDs[n2]]:
-                            num_same_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
-    return (num_same_ties / num_ties)
+    print("hello2")
+    try:
+        for n1 in G.nodes():
+            for n2 in G.nodes():
+                if n1 > n2:  # do not double-count edges!
+                    if IDs[n1] in chars.keys() and IDs[n2] in chars.keys():
+                        if G.has_edge(n1, n2):
+                            num_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
+                            if any(chars[IDs[n1]]) == any(chars[IDs[n2]]):
+                                num_same_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
+    except Exception as e:
+        print("exception: " + str(e))
+    #print("hello")
+    #print("num_ties: " + str(num_ties))
+    #print("num_same_ties: " + str(num_same_ties))
+    return float(num_same_ties / num_ties)
 
 
 # measure of homophily will be the proportion of edges in the network whose constituent nodes share that characteristic.
@@ -70,16 +87,14 @@ def hh_chars():
 def map_features(dfs):
     cast_maps = list()
     religion_maps = list()
-    hh_keys = hh_chars()
     for df in dfs:
         caste = dict()
         religion = dict()
-        for i, v in df.hhid.items():
-            adjmatrix_key = hh_keys.get(v)
-            if adjmatrix_key not in caste:
-                caste[adjmatrix_key] = df.caste[i]
-            if adjmatrix_key not in religion:
-                religion[adjmatrix_key] = df.religion[i]
+        for i, v in df.adjmatrix_key.items():
+            if v not in caste:
+                caste[v] = df.caste[i]
+            if v not in religion:
+                religion[v] = df.religion[i]
         cast_maps.append(caste)
         religion_maps.append(religion)
 
@@ -99,8 +114,9 @@ def find_mf_participation_percentage(dfs):
     participation = dict()
 
     for df in dfs:
+        df = df.dropna()
         count = 0
-        village = df.village[0]
+        village = df.village.iloc[0]
         participation[village] = 0
         for p in df.mf_participation:
             count += 1
@@ -112,7 +128,7 @@ def find_mf_participation_percentage(dfs):
 def find_homophilies():
     dfs = create_df()
     cast_maps, religion_maps = map_features(dfs)
-    pids = hh_pids()
+    #pids = hh_pids()
     village_caste_homophily = dict()
     village_religion_homophily = dict()
     for i in range(1, 78):
@@ -120,7 +136,8 @@ def find_homophilies():
             adj = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(i)+".csv",
                             delimiter=",")
             graph = nx.to_networkx_graph(adj)
-            array_pid = np.array(pids[i-1][0])
+            array_pid = dfs[i-1].adjmatrix_key.values
+            print("i:" + str(i))
             village_caste_homophily[i] = homophily(graph, cast_maps[i-1], array_pid)
             village_religion_homophily[i] = homophily(graph, religion_maps[i-1], array_pid)
         except:
