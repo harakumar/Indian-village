@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+from homophily.clustering import spectral_clustering
 
 data_filepath = '../data/'
+hh_cluster_dict = spectral_clustering()
 
 
 def create_df():
@@ -38,7 +40,8 @@ def create_df():
             df_hh_village = df_hh_village.assign(mf_participation=df_mf.values)
             dfs.append(df_hh_village)
         except Exception as e:
-            print("creating dfs: i: " + str(i) + " " + str(e))
+            #print("creating dfs: i: " + str(i) + " " + str(e))
+            pass
 
     return dfs
 
@@ -136,9 +139,18 @@ def find_homophilies():
     #pids = hh_pids()
     village_caste_homophily = dict()
     village_religion_homophily = dict()
+    village_cluster_caste_homophily = dict()
+    village_cluster_religion_homophily = dict()
     for df in dfs:
         try:
             village = df.village.iloc[0]
+            village_cluster_caste_homophily[village] = dict()
+            village_cluster_religion_homophily[village] = dict()
+            adj_csv = pd.read_csv(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
+                              dtype=int, header=None)
+            village_cluster_caste_homophily[village],  village_cluster_religion_homophily[village] = \
+                cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village)
+
             adj = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
                             delimiter=",")
             graph = nx.to_networkx_graph(adj)
@@ -151,7 +163,39 @@ def find_homophilies():
     df1 = pd.Series(participation)
     df2 = pd.Series(village_caste_homophily)
     df3 = pd.Series(village_religion_homophily)
-    return df1, df2, df3
+    return df1, df2, df3, village_cluster_caste_homophily, village_cluster_religion_homophily
+
+
+def cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village, village_cluster_caste_homophily,
+                           village_cluster_religion_homophily):
+    village_cluster_caste_homophily = dict()
+    village_cluster_religion_homophily = dict()
+    # find homophilies in clusters in the same village
+    # it is a dict
+    village_clusters = find_homophily_in_clusters(village)
+    # iterate over the dictionary and each element is a dict
+    # cluster is a key, list of hh ids is a value
+    # create adj ndarray matrix of the hh ids in the list
+    for c in village_clusters.values():
+        cluster_g = cluster_graph(adj_csv, c)
+        village_cluster_caste_homophily[c] = homophily(cluster_g, cast_maps[village], c)
+        village_cluster_religion_homophily[c] = homophily(cluster_g, religion_maps[village], c)
+
+    return village_cluster_caste_homophily, village_cluster_religion_homophily
+
+def cluster_graph(adj_csv, cluster):
+    G = nx.Graph()
+    size_of_cluster = len(cluster)
+    for i in range(size_of_cluster):
+        G.add_node(i)
+    for i in range(size_of_cluster):
+        for j in range(i + 1, size_of_cluster):
+            if adj_csv[i][j] == 1:
+                G.add_edge(i, j)
+    return G
+
+def find_homophily_in_clusters(village):
+    return hh_cluster_dict[village]
 
 def correlation(df):
     corr = df.corr()
@@ -165,10 +209,10 @@ def correlation(df):
     ax.set_yticks(ticks)
     ax.set_xticklabels(df.columns)
     ax.set_yticklabels(df.columns)
-    #plt.show()
-    plt.savefig('corr.png')
+    plt.show()
+    #plt.savefig('corr.png')
 
-df1, df2, df3 = find_homophilies()
+df1, df2, df3, cluster_caste, cluster_rel = find_homophilies()
 df = pd.DataFrame()
 df = df.assign(mf_participation=df1)
 df = df.assign(village_caste_homophily=df2)
