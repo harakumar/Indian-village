@@ -47,24 +47,35 @@ def create_df():
 
 # the observed homophily in our network
 # measure of homophily is the proportion of edges whose nodes share a characteristic.
-def homophily(G, chars, IDs):
+def homophily(G, chars, IDs, isCluster):
     """
     Given a network G, a dict of characteristics chars for node IDs,
     and dict of node IDs for each node in the network,
     find the homophily of the network.
     """
     num_same_ties, num_ties = 0, 0
-    try:
-        for n1 in G.nodes():
-            for n2 in G.nodes():
-                if n1 > n2:  # do not double-count edges!
+
+    #try:
+    for n1 in G.nodes():
+        for n2 in G.nodes():
+            if n1 > n2:  # do not double-count edges!
+                if isCluster:
+                    if n1 in chars.keys() and n2 in chars.keys():
+                        if G.has_edge(n1, n2):
+                            num_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
+                            if chars[n1] == chars[n2]:
+                                num_same_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
+                else:
                     if IDs[n1] in chars.keys() and IDs[n2] in chars.keys():
                         if G.has_edge(n1, n2):
                             num_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
                             if chars[IDs[n1]] == chars[IDs[n2]]:
                                 num_same_ties += 1  # Should `num_ties` be incremented?  What about `num_same_ties`?
-    except Exception as e:
-        print("exception: " + str(e) + " IDs[n1]: " + str(IDs[n1]) + " IDs[n2]" + str(IDs[n2]))
+
+    if num_ties == 0:
+        print("G: ", G.__repr__())
+    # except Exception as e:
+    #     print("exception: " + str(e) + " IDs[n1]: " + str(IDs[n1]) + " IDs[n2]" + str(IDs[n2]))
     return float(num_same_ties / num_ties)
 
 
@@ -142,23 +153,23 @@ def find_homophilies():
     village_cluster_caste_homophily = dict()
     village_cluster_religion_homophily = dict()
     for df in dfs:
-        try:
-            village = df.village.iloc[0]
-            village_cluster_caste_homophily[village] = dict()
-            village_cluster_religion_homophily[village] = dict()
-            adj_csv = pd.read_csv(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
-                              dtype=int, header=None)
-            village_cluster_caste_homophily[village],  village_cluster_religion_homophily[village] = \
-                cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village)
+        #try:
+        village = df.village.iloc[0]
+        village_cluster_caste_homophily[village] = dict()
+        village_cluster_religion_homophily[village] = dict()
+        adj_csv = pd.read_csv(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
+                          dtype=int, header=None)
+        village_cluster_caste_homophily[village],  village_cluster_religion_homophily[village] = \
+            cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village)
 
-            adj = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
-                            delimiter=",")
-            graph = nx.to_networkx_graph(adj)
-            array_pid = df.adjmatrix_key.values
-            village_caste_homophily[village] = homophily(graph, cast_maps[village], array_pid)
-            village_religion_homophily[village] = homophily(graph, religion_maps[village], array_pid)
-        except Exception as e:
-            print("final exception: " + str(e))
+        adj = np.loadtxt(data_filepath + "network_data/adjacency_matrices/adj_allVillageRelationships_HH_vilno_" + str(village)+".csv",
+                        delimiter=",")
+        graph = nx.to_networkx_graph(adj)
+        array_pid = df.adjmatrix_key.values
+        village_caste_homophily[village] = homophily(graph, cast_maps[village], array_pid, False)
+        village_religion_homophily[village] = homophily(graph, religion_maps[village], array_pid, False)
+        # except Exception as e:
+        #     print("final exception: " + str(e))
     participation = find_mf_participation_percentage(dfs)
     df1 = pd.Series(participation)
     df2 = pd.Series(village_caste_homophily)
@@ -166,8 +177,7 @@ def find_homophilies():
     return df1, df2, df3, village_cluster_caste_homophily, village_cluster_religion_homophily
 
 
-def cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village, village_cluster_caste_homophily,
-                           village_cluster_religion_homophily):
+def cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village):
     village_cluster_caste_homophily = dict()
     village_cluster_religion_homophily = dict()
     # find homophilies in clusters in the same village
@@ -176,26 +186,29 @@ def cluster_homophily_dict(adj_csv, cast_maps, religion_maps, village, village_c
     # iterate over the dictionary and each element is a dict
     # cluster is a key, list of hh ids is a value
     # create adj ndarray matrix of the hh ids in the list
-    for c in village_clusters.values():
-        cluster_g = cluster_graph(adj_csv, c)
-        village_cluster_caste_homophily[c] = homophily(cluster_g, cast_maps[village], c)
-        village_cluster_religion_homophily[c] = homophily(cluster_g, religion_maps[village], c)
+    for c in village_clusters.keys():
+        cluster_g = cluster_graph(adj_csv, village_clusters[c])
+        village_cluster_caste_homophily[c] = homophily(cluster_g, cast_maps[village], village_clusters[c], True)
+        village_cluster_religion_homophily[c] = homophily(cluster_g, religion_maps[village], village_clusters[c], True)
 
     return village_cluster_caste_homophily, village_cluster_religion_homophily
+
 
 def cluster_graph(adj_csv, cluster):
     G = nx.Graph()
     size_of_cluster = len(cluster)
     for i in range(size_of_cluster):
-        G.add_node(i)
+        G.add_node(cluster[i])
     for i in range(size_of_cluster):
-        for j in range(i + 1, size_of_cluster):
-            if adj_csv[i][j] == 1:
-                G.add_edge(i, j)
+        for j in range(size_of_cluster):
+            if i != j and adj_csv[cluster[i]-1][cluster[j]-1] == 1:
+                G.add_edge(cluster[i], cluster[j])
     return G
+
 
 def find_homophily_in_clusters(village):
     return hh_cluster_dict[village]
+
 
 def correlation(df):
     corr = df.corr()
@@ -211,6 +224,7 @@ def correlation(df):
     ax.set_yticklabels(df.columns)
     plt.show()
     #plt.savefig('corr.png')
+
 
 df1, df2, df3, cluster_caste, cluster_rel = find_homophilies()
 df = pd.DataFrame()
